@@ -1,0 +1,5 @@
+NB : LittleM sert de wraper universel pour les models comme Smolagents.
+Connaitre l'id d'un model : I.e : Ollama :  ollama list ---resultat.
+
+
+https://www.promptingguide.ai/techniques/react

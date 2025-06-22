@@ -1,0 +1,15 @@
+argparse
+#io already installed with python
+#time already installed
+#PIL already installed 
+helium
+duckduckgo_search
+selenium
+openai  
+litellm
+Ollama
+transformers 
+accelerate 
+huggingface_hub 
+torch 
+torchvision
