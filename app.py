@@ -15,8 +15,16 @@ from Functions.initialized_driver import initialize_driver
 import yaml 
 from dotenv import load_dotenv
 import time 
+from PIL import Image
+
+from smolagents import AgentMemory, ActionStep
+
+import numpy as np
+
+from PIL import Image
 
 
+AGENT_MEMORY = None
 
 
 ################################################################################## TOOLSfrom selenium.webdriver.common.by import By
@@ -47,13 +55,8 @@ def search_item_ctrl_f(text: str, nth_result: int = 1) -> str:
     time.sleep(2)
 
     content = target_paragraph.text.strip()
-    print(f"🔍 Paragraphe trouvé (#{nth_result}) contenant '{text}':\n{content}")
+    #print(f"🔍 Paragraphe trouvé (#{nth_result}) contenant '{text}':\n{content}")
     return content
-
-
-
-# Add a function to save Screenshots 
-
 
 @tool
 def go_back() -> None:
@@ -92,37 +95,67 @@ from transformers import pipeline
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 llava_pipe = pipeline(
-    "image-to-text",
+    "image-text-to-text",
     model="llava-hf/llava-onevision-qwen2-0.5b-ov-hf",
     device=device
 )
 
 
 
-from smolagents import AgentMemory, ActionStep
-
-
-@tool
-def describe_last_screenshot() -> str:
+def describe_step(step: ActionStep) -> str:
     """
-    Use the visual model to describe the last screenshot taken by the agent.
-
+    Décrit une capture d’écran à partir d’un step individuel avec LLaVA.
+    
+    Args:
+        step (ActionStep): Une étape contenant potentiellement une image.
+        
     Returns:
-        str: A description of the last screenshot based on the visual model.
+        str: La description générée pour cette image.
     """
-    global AGENT_MEMORY
-    if AGENT_MEMORY is None:
-        return "Agent memory is not available."
+    description = ""
+    
+    if hasattr(step, "observations_images") and step.observations_images:
+        img = step.observations_images[-1]
+        print(f"\nStep {step.step_number} – Screenshot size: {getattr(img, 'size', 'unknown')}")
+        print(f" Type réel de img: {type(img)}")
 
-    for step in reversed(AGENT_MEMORY.steps):
-        if isinstance(step, ActionStep):
-            if hasattr(step, "observations_images") and step.observations_images:
-                img = step.observations_images[-1]
-                description = llava_pipe(img)[0]["generated_text"]
-                return f"🖼 Step {step.step_number} screenshot description:\n{description}"
-    return "No screenshot found in memory."
+        try:
+            # Conversion sécurisée en PIL.Image
+            if isinstance(img, Image.Image):
+                pil_img = img
+            elif isinstance(img, np.ndarray):
+                pil_img = Image.fromarray(img)
+                print(" Converti depuis np.ndarray.")
+            elif isinstance(img, str):
+                pil_img = Image.open(img)
+                print(" Chargé depuis un chemin d’image.")
+            else:
+                raise TypeError(f" Type d’image non pris en charge : {type(img)}")
+            
+            # Appel à LLaVA
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": pil_img},
+                        {"type": "text", "text": "Based on this image, is it likely that the text is talking about Wonder Woman? If so, describe what characteristics of her are mentioned."
+}
+                    ]
+                }
+            ]
 
+            result = llava_pipe(messages)
+            desc = result[0]["generated_text"]
+            print(f" Description: {desc}")
+            description = desc
 
+        except Exception as e:
+            print(f" Erreur de description à l’étape {step.step_number}: {str(e)}")
+
+    else:
+        print(f"\n Step {step.step_number} – Aucune image trouvée.")
+    
+    return description
 
 ################################################################################## FUNCTIONS
 def initialize_agent(model):
@@ -130,25 +163,21 @@ def initialize_agent(model):
     """Initialize the CodeAgent with the specified model."""
     
     return CodeAgent(
-        tools=[go_back, close_popups, search_item_ctrl_f, web_search,describe_last_screenshot],
+        tools=[go_back, close_popups, search_item_ctrl_f, web_search],
         model=model,
         additional_authorized_imports=["helium"],
-        step_callbacks=[save_screenshot],
+        step_callbacks=[save_screenshot,describe_step],
         max_steps=20,
         verbosity_level=2,
     )
     
-
-
-
-
     
     
 ################################################################################## MAIN"
 
 
 def main():
-    global AGENT_MEMORY  # pour que la mémoire soit accessible à l'outil
+    
     # Load environment variables
     load_dotenv()
 
@@ -166,10 +195,13 @@ def main():
     driver = initialize_driver()
     agent = initialize_agent(model)
     
-    AGENT_MEMORY = agent.memory  # <- on conserve la mémoire pour l'outil
 
     # Run the agent with the provided prompt
     agent.python_executor("from helium import *")
     agent.run(args.prompt + prompt["helium_instructions"])
+    global AGENT_MEMORY  # pour que la mémoire soit accessible à l'outil
+    AGENT_MEMORY = agent.memory  # <- on conserve la mémoire pour l'outil
+    
+    
 if __name__ == "__main__":
     main()

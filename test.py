@@ -1,19 +1,29 @@
-from smolagents import LiteLLMModel
+from PIL import Image
+import requests
+from io import BytesIO
 
-model = LiteLLMModel(
-    model="ollama/llama3.2",
-    model_id="ollama/llama3.2",
-    base_url="http://localhost:11434"
+img_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/ai2d-demo.jpg"
+response = requests.get(img_url)
+pil_img = Image.open(BytesIO(response.content)).convert("RGB")
+
+
+import torch
+from transformers import pipeline
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+llava_pipe = pipeline(
+    "image-text-to-text",
+    model="llava-hf/llava-onevision-qwen2-0.5b-ov-hf",
+    device="cuda" if torch.cuda.is_available() else "cpu"
 )
+messages = [{
+    "role": "user",
+    "content": [
+        {"type": "image", "image": pil_img},
+        {"type": "text", "text": "What is shown in this image?"}
+    ]
+}]
 
-messages = [
-  {"role": "user", "content": [{"type": "text", "text": "Hello, how are you?"}]}
-]
-
-response = model(messages)
-print(response.content)
-
-
-###Question :  why thid model just answer the question, and not purchase the conversation?
-
-
+res = llava_pipe(messages)
+print(res)
